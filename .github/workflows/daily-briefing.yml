@@ -1,0 +1,92 @@
+name: 매일 아침 시사 브리핑
+
+on:
+  schedule:
+    # GitHub 예약은 UTC 기준 + 자주 늦게 출발 → 미리 5번 깨우고, 코드가 08:50(KST)에 딱 한 번 보냄
+    - cron: "5 23 * * *"    # 08:05 KST
+    - cron: "15 23 * * *"   # 08:15 KST
+    - cron: "25 23 * * *"   # 08:25 KST
+    - cron: "35 23 * * *"   # 08:35 KST
+    - cron: "45 23 * * *"   # 08:45 KST
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "지금 바로 보내기 (08:50 안 기다림, 오늘 이미 보냈어도)"
+        type: boolean
+        default: true
+      dry_run:
+        description: "미리보기만 (카톡 안 보냄, 기억 저장 안 함)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # 보낸 기사 기록(data/)과 브리핑 페이지(docs/)를 저장소에 저장
+  pages: write      # 브리핑 페이지 배포
+  id-token: write
+
+concurrency:
+  group: daily-briefing   # 동시에 두 개가 돌지 않게 → 중복 발송 방지
+  cancel-in-progress: false
+
+env:
+  FORCE: ${{ inputs.force }}
+  DRY_RUN: ${{ inputs.dry_run }}
+
+jobs:
+  briefing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: ① 준비 (수집 → AI 칸 채우기 → 코드 매칭 → 날짜 교차 확인)
+        id: prep
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_MAX_CALLS_PER_DAY: ${{ vars.GEMINI_MAX_CALLS_PER_DAY }}
+        run: python -m bot.main prepare
+
+      - name: ② 브리핑 페이지 배포
+        id: deploy_prep
+        if: steps.prep.outputs.skip != 'true' && inputs.dry_run != true
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: ② 브리핑 페이지 배포 (공개)
+        id: deploy
+        if: steps.deploy_prep.outcome == 'success'
+        continue-on-error: true   # 페이지가 실패해도 카톡은 1번 기사 링크로 보냄
+        uses: actions/deploy-pages@v4
+
+      - name: ③ 08:50까지 기다렸다가 카톡 발송
+        if: steps.prep.outputs.skip != 'true'
+        env:
+          KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          PAGE_URL: ${{ steps.deploy.outputs.page_url }}
+        run: python -m bot.main send
+
+      - name: ④ 기억 저장 (보낸 기사 기록)
+        if: always() && steps.prep.outputs.skip != 'true' && inputs.dry_run != true
+        run: |
+          git config user.name "briefing-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ docs/
+          if git diff --cached --quiet; then echo "변경 없음"; exit 0; fi
+          git commit -m "기록: $(TZ=Asia/Seoul date +%F) 브리핑"
+          git pull --rebase
+          git push
