@@ -165,12 +165,12 @@ STAGE2_SCHEMA = {
         "type": "OBJECT",
         "properties": {
             "id": {"type": "STRING"},
-            "easy_title": {"type": "STRING", "description": "쉬운 말 한 줄 제목, 18자 이내. 이것만 읽어도 무슨 일인지 알 수 있게"},
+            "easy_title": {"type": "STRING", "description": "한 줄 제목 18자 이내. 기사에 나온 단어를 그대로 쓰고, 이것만 읽어도 무슨 일인지 알 수 있게"},
             "easy_points": {"type": "ARRAY", "items": {"type": "STRING"},
-                            "description": "핵심 3줄. 각 30자 이내의 짧은 문장. 어려운 한자어 대신 쉬운 말."},
+                            "description": "핵심 3줄. 각 30자 이내의 짧은 문장. 용어는 기사에 쓰인 단어 그대로 (쉬운 말로 바꾸지 말 것)"},
             "why_it_matters": {"type": "STRING", "description": "군인·국민에게 왜 중요한지 한 문장, 35자 이내"},
             "term": {"type": "STRING", "description": "기사 속 어려운 용어 하나, 10자 이내(없으면 빈 문자열)"},
-            "term_explain": {"type": "STRING", "description": "중학생도 바로 아는 쉬운 말로 25자 이내. 풀이 안에 또 어려운 한자어·약어를 쓰지 말 것. 예) 구축함: 적 비행기·잠수함과 싸우는 큰 군함"},
+            "term_explain": {"type": "STRING", "description": "그 용어의 정확한 뜻 30자 이내 (사전식 정의)"},
             "event_date_check": {"type": "STRING", "description": "사건 날짜 YYYY-MM-DD를 기사 내용만 보고 다시 판단. 모르면 빈 문자열"},
         },
         "required": ["id", "easy_title", "easy_points", "why_it_matters", "term", "term_explain", "event_date_check"],
@@ -202,8 +202,9 @@ def stage1_classify(cands: list, recent_sent: list, today: str, guard: QuotaGuar
 
 def stage2_write(picks: list, today: str, guard: QuotaGuard) -> dict:
     payload = {"today_kst": today, "articles": [_fmt_item(a, 400) for a in picks]}
-    prompt = ("난독증이 있고 기사를 잘 안 읽는 군인이 10초 안에 이해하도록 써라. "
-              "짧은 문장, 쉬운 단어, 숫자는 꼭 필요한 것만. 기사에 없는 내용은 쓰지 마라. "
+    prompt = ("기사를 잘 안 읽는 군인이 10초 안에 핵심을 파악하도록 써라. "
+              "문장은 짧게 끊되, 용어와 고유명사는 기사에 쓰인 그대로 써라(쉬운 말로 바꾸지 마라). "
+              "숫자는 꼭 필요한 것만. 기사에 없는 내용은 쓰지 마라. "
               "event_date_check 는 앞선 판단을 참고하지 말고 기사 내용만 보고 새로 정하라.\n"
               + json.dumps(payload, ensure_ascii=False))
     rows = _call(prompt, STAGE2_SCHEMA, guard)
