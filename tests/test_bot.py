@@ -2,7 +2,7 @@
 import unittest
 from datetime import datetime, timedelta
 
-from bot import config, formatter, matcher
+from bot import config, formatter, gemini, matcher
 
 NOW = datetime(2026, 11, 12, 8, 30, tzinfo=config.KST)
 
@@ -112,6 +112,12 @@ class T(unittest.TestCase):
         out = matcher.rank([art(1, "기사 제목 번호 1 입니다")], rows, [], NOW)
         self.assertEqual(out[0]["ai"]["importance"], 5)
         self.assertEqual(out[0]["ai"]["category"], "기타")
+
+
+    def test_pick_models(self):
+        names = ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-4.0-flash-preview",
+                 "gemini-3.8-flash-image", "gemini-3.8-pro", "gemini-2.0-flash-lite-001"]
+        self.assertEqual(gemini.pick_models(names), ["gemini-3.8-flash", "gemini-3.5-flash-lite"])
 
 
 if __name__ == "__main__":

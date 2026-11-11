@@ -26,8 +26,8 @@ def check_gemini():
         line(f"  ✗ 키 확인 실패 HTTP {r.status_code}: {r.json().get('error', {}).get('message', '')[:150]}"); return
     names = {m["name"].split("/")[-1] for m in r.json().get("models", [])}
     line(f"  ✓ 키 정상. 사용 가능한 모델 {len(names)}개")
-    for m in config.GEMINI_MODELS:
-        line(f"    {'✓' if m in names else '✗'} {m}")
+    from bot import gemini
+    line(f"  봇이 자동으로 고를 모델: {gemini.pick_models(sorted(names))}")
     state = storage.load_state()
     u = state.get("gemini_usage", {})
     line(f"  오늘 봇 호출 수: {u.get('calls', 0)} / 봇 자체 상한 {config.GEMINI_MAX_CALLS_PER_DAY} (기록일 {u.get('date', '-')})")

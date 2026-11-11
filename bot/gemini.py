@@ -32,6 +32,50 @@ class QuotaGuard:
         self.usage["calls"] += 1
 
 
+_MODELS_CACHE: list | None = None
+_SKIP = ("preview", "exp", "image", "tts", "live", "audio", "embedding", "thinking", "robotics", "native")
+
+
+def pick_models(names: list) -> list:
+    """사용 가능한 모델 이름 목록에서 '가장 최신 정식 flash' 와 '가장 최신 정식 flash-lite' 를 고른다.
+    구글이 옛 모델을 없애도 코드를 고칠 필요가 없게."""
+    import re
+    best = {}
+    for n in names:
+        m = re.fullmatch(r"gemini-(\d+(?:\.\d+)?)-flash(-lite)?(?:-(\d{3}))?", n)
+        if not m or any(k in n for k in _SKIP):
+            continue
+        kind = "lite" if m.group(2) else "flash"
+        ver = (float(m.group(1)), int(m.group(3) or 0))
+        if kind not in best or ver > best[kind][0]:
+            best[kind] = (ver, n)
+    return [best[k][1] for k in ("flash", "lite") if k in best]
+
+
+def available_models(key: str) -> list:
+    """GitHub Variables 의 GEMINI_MODEL(있으면) → 자동으로 찾은 최신 flash → flash-lite 순서.
+    모델 목록 조회는 생성 한도를 쓰지 않는다."""
+    global _MODELS_CACHE
+    if _MODELS_CACHE is not None:
+        return _MODELS_CACHE
+    names = []
+    try:
+        r = requests.get("https://generativelanguage.googleapis.com/v1beta/models",
+                         headers={"x-goog-api-key": key}, params={"pageSize": 1000}, timeout=20)
+        r.raise_for_status()
+        names = [m["name"].split("/")[-1] for m in r.json().get("models", [])
+                 if "generateContent" in m.get("supportedGenerationMethods", [])]
+    except Exception as e:
+        print(f"[Gemini] 모델 목록 조회 실패({type(e).__name__}) → 기본 이름 사용")
+    chosen = []
+    for m in [config.GEMINI_MODEL_OVERRIDE] + pick_models(names) + ([] if names else config.GEMINI_MODELS):
+        if m and m not in chosen and (not names or m in names):
+            chosen.append(m)
+    print(f"[Gemini] 사용할 모델: {chosen}")
+    _MODELS_CACHE = chosen
+    return chosen
+
+
 def _call(prompt: str, schema: dict, guard: QuotaGuard) -> list:
     key = config.secret("GEMINI_API_KEY")
     body = {
@@ -45,7 +89,7 @@ def _call(prompt: str, schema: dict, guard: QuotaGuard) -> list:
         },
     }
     last_err = None
-    for model in config.GEMINI_MODELS:
+    for model in available_models(key):
         for attempt in range(2):
             guard.take()
             try:
@@ -56,7 +100,11 @@ def _call(prompt: str, schema: dict, guard: QuotaGuard) -> list:
                 continue
             if r.status_code == 200:
                 data = r.json()
-                text = "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+                cand = data["candidates"][0]
+                text = "".join(p.get("text", "") for p in cand.get("content", {}).get("parts", [])
+                               if not p.get("thought"))
+                if cand.get("finishReason") not in (None, "STOP"):
+                    print(f"[Gemini] 경고: 응답이 끝까지 오지 않음 ({cand.get('finishReason')})")
                 print(f"[Gemini] {model} 성공 (오늘 {guard.usage['calls']}회째)")
                 return json.loads(text)
             last_err = f"{model} HTTP {r.status_code}: {r.text[:200]}"

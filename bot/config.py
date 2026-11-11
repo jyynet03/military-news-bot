@@ -29,11 +29,10 @@ TITLE_SIMILARITY = 0.72          # 제목 유사도 기준 (0~1)
 # 정상이면 하루 2번(1차 평가 1 + 2차 요약 1).
 # 상한 8 = 2단계 × 모델 2개 × 시도 2번 (실패·재시도가 최악으로 겹쳐도 이 이상은 안 씀)
 GEMINI_MAX_CALLS_PER_DAY = int(os.getenv("GEMINI_MAX_CALLS_PER_DAY") or "8")
-GEMINI_MODELS = [m for m in [
-    os.getenv("GEMINI_MODEL", "").strip(),   # GitHub Variables 로 바꿀 수 있음
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-] if m]
+GEMINI_MODEL_OVERRIDE = os.getenv("GEMINI_MODEL", "").strip()  # GitHub Variables 로 지정 가능 (보통 비워 둠)
+# 평소엔 키로 '지금 쓸 수 있는 모델 목록'을 조회해서 최신 정식 flash → flash-lite 순으로 자동 선택.
+# 아래는 목록 조회 자체가 실패했을 때만 쓰는 예비 이름.
+GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
 
 # ── 믿을 수 있는 뉴스 출처 (화이트리스트) ───────────────
 # trust: 출처 신뢰 가중치. domain: 링크가 이 도메인일 때만 통과.
