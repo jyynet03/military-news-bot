@@ -31,6 +31,10 @@ class QuotaGuard:
             raise RuntimeError(f"오늘 Gemini 호출 상한({config.GEMINI_MAX_CALLS_PER_DAY}회)에 도달")
         self.usage["calls"] += 1
 
+    def refund(self):
+        """서버 오류(5xx)·연결 실패는 구글 한도에 안 잡히므로 봇 카운트에서도 뺀다."""
+        self.usage["calls"] = max(0, self.usage["calls"] - 1)
+
 
 _MODELS_CACHE: list | None = None
 _SKIP = ("preview", "exp", "image", "tts", "live", "audio", "embedding", "thinking", "robotics", "native")
@@ -89,30 +93,40 @@ def _call(prompt: str, schema: dict, guard: QuotaGuard) -> list:
         },
     }
     last_err = None
+    waits = [15, 45, 90]   # 서버가 바쁠 때(503/500) 기다렸다가 다시: 최대 3번
     for model in available_models(key):
-        for attempt in range(2):
+        for attempt in range(len(waits) + 1):
             guard.take()
             try:
-                r = requests.post(API.format(model=model), json=body, timeout=120,
+                r = requests.post(API.format(model=model), json=body, timeout=180,
                                   headers={"x-goog-api-key": key})  # 키는 URL 이 아니라 헤더로 → 로그에 안 남음
             except requests.RequestException as e:
-                last_err = e
-                continue
-            if r.status_code == 200:
-                data = r.json()
-                cand = data["candidates"][0]
-                text = "".join(p.get("text", "") for p in cand.get("content", {}).get("parts", [])
-                               if not p.get("thought"))
-                if cand.get("finishReason") not in (None, "STOP"):
-                    print(f"[Gemini] 경고: 응답이 끝까지 오지 않음 ({cand.get('finishReason')})")
-                print(f"[Gemini] {model} 성공 (오늘 {guard.usage['calls']}회째)")
-                return json.loads(text)
-            last_err = f"{model} HTTP {r.status_code}: {r.text[:200]}"
-            print(f"[Gemini] 실패 {last_err}")
-            if r.status_code == 429 and attempt == 0:
-                time.sleep(20)          # 분당 한도 → 잠깐 쉬고 한 번만 재시도
-                continue
-            break                        # 404(모델 없음) 등 → 다음 모델로
+                guard.refund()
+                last_err = f"{model} 연결 오류 {type(e).__name__}"
+                print(f"[Gemini] {last_err}")
+            else:
+                if r.status_code == 200:
+                    data = r.json()
+                    cand = data["candidates"][0]
+                    text = "".join(p.get("text", "") for p in cand.get("content", {}).get("parts", [])
+                                   if not p.get("thought"))
+                    if cand.get("finishReason") not in (None, "STOP"):
+                        print(f"[Gemini] 경고: 응답이 끝까지 오지 않음 ({cand.get('finishReason')})")
+                    print(f"[Gemini] {model} 성공 (오늘 {guard.usage['calls']}회째)")
+                    return json.loads(text)
+                try:
+                    msg = r.json().get("error", {}).get("message", "")[:150]
+                except ValueError:
+                    msg = r.text[:150]
+                last_err = f"{model} HTTP {r.status_code}: {msg}"
+                print(f"[Gemini] 실패 {last_err}")
+                if r.status_code >= 500:
+                    guard.refund()               # 서버 쪽 실패는 한도에 안 들어감
+                elif r.status_code != 429:
+                    break                        # 404(모델 없음)·400 등 → 다음 모델로
+            if attempt < len(waits):
+                print(f"[Gemini] {waits[attempt]}초 기다렸다가 다시 시도")
+                time.sleep(waits[attempt])
     raise RuntimeError(f"Gemini 호출 실패: {last_err}")
 
 
