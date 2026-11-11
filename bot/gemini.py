@@ -130,7 +130,7 @@ def stage1_classify(cands: list, recent_sent: list, today: str, guard: QuotaGuar
     payload = {
         "today_kst": today,
         "recently_sent": [h["title"] for h in recent_sent][-25:],
-        "articles": [_fmt_item(a, 220) for a in cands],
+        "articles": [_fmt_item(a, 160) for a in cands],
     }
     prompt = ("아래 기사 각각에 대해 칸을 채워라. 모든 id에 대해 하나씩 답하라.\n"
               + json.dumps(payload, ensure_ascii=False))

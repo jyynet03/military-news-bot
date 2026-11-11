@@ -58,7 +58,7 @@ def prepare():
         if cands:
             rows1 = gemini.stage1_classify(cands, recent_sent, today, guard)
             ranked = matcher.rank(cands, rows1, history, now)
-            pool = matcher.select(ranked, config.STAGE2_PICK_POOL)
+            pool = matcher.select(ranked, config.STAGE2_PICK_POOL, matcher.pool_caps())
             rows2 = gemini.stage2_write(pool, today, guard) if pool else {}
             verified = []
             for a in pool:
@@ -75,7 +75,7 @@ def prepare():
         print(f"[경고] AI 단계 실패 → 제목만 보냅니다: {e}")
         traceback.print_exc()
         warnings.append("⚠️ 오늘은 AI 요약이 안 돼서 원래 제목만 보여요.")
-        picks = sorted(cands, key=lambda a: (-a["trust"], -matcher._keyword_bonus(a)))[: config.ARTICLE_COUNT]
+        picks = sorted(cands, key=lambda a: (-a["trust"], -matcher.keyword_bonus(a)))[: config.ARTICLE_COUNT]
 
     if not config.DRY_RUN:
         storage.save_state(state)   # AI 호출 횟수는 실패해도 기록 (무료 한도 보호)

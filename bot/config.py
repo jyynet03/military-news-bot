@@ -12,10 +12,13 @@ LATE_DEADLINE_HOUR = 11          # 이 시각 이후 자동 실행이면 보내�
 ARTICLE_COUNT = 5
 # 분야별 최대 개수 (한쪽으로 쏠리지 않게)
 CATEGORY_CAP = {"국제정세": 2, "북한·안보": 2, "국내정치": 1, "경제": 1, "사회": 1, "기타": 0}
+# 최소 보장: 국제(국제정세·북한·안보) 1개 이상, 국내(국내정치·경제·사회) 1개 이상
+GROUPS = {"국제": ("국제정세", "북한·안보"), "국내": ("국내정치", "경제", "사회")}
+GROUP_MIN = {"국제": 1, "국내": 2}
 MIN_IMPORTANCE = 3               # AI 중요도 1~5 중 이 값 미만은 탈락
 MAX_AGE_HOURS = 30               # 이보다 오래된 기사는 후보에서 제외
-STAGE1_MAX_CANDIDATES = 45       # AI 1차 평가에 넘길 최대 기사 수
-STAGE2_PICK_POOL = 9             # AI 2차(요약+날짜 재확인)에 넘길 기사 수
+STAGE1_MAX_CANDIDATES = 70       # AI 1차 평가에 넘길 최대 기사 수 (한 번 호출에 묶어서 보냄)
+STAGE2_PICK_POOL = 9             # AI 2차(요약+날짜 재확인)에 넘길 기사 수 (날짜 탈락 대비 여유분)
 
 # ── 기억(중복 방지) ─────────────────────────────────────
 HISTORY_KEEP_DAYS = 21           # 보낸 기사 기록 보관 기간
@@ -36,21 +39,26 @@ GEMINI_MODELS = [m for m in [
 # trust: 출처 신뢰 가중치. domain: 링크가 이 도메인일 때만 통과.
 # ※ 카카오 개발자 콘솔 [앱 > 플랫폼 > Web 사이트 도메인]에 각 domain 을 등록해야 링크가 열린다.
 FEEDS = [
-    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/northkorea.xml", "trust": 1.0, "domain": "www.yna.co.kr"},
-    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/international.xml", "trust": 1.0, "domain": "www.yna.co.kr"},
-    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/politics.xml", "trust": 1.0, "domain": "www.yna.co.kr"},
-    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/economy.xml", "trust": 0.9, "domain": "www.yna.co.kr"},
-    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/society.xml", "trust": 0.85, "domain": "www.yna.co.kr"},
-    {"name": "BBC 코리아", "url": "https://feeds.bbci.co.uk/korean/rss.xml", "trust": 0.95, "domain": "www.bbc.com"},
+    # quota: AI 평가로 넘기는 피드별 최대 개수 → 한 분야가 후보를 독차지하지 못하게
+    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/northkorea.xml", "trust": 1.0, "domain": "www.yna.co.kr", "quota": 10},
+    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/international.xml", "trust": 1.0, "domain": "www.yna.co.kr", "quota": 14},
+    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/politics.xml", "trust": 1.0, "domain": "www.yna.co.kr", "quota": 12},
+    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/economy.xml", "trust": 0.9, "domain": "www.yna.co.kr", "quota": 10},
+    {"name": "연합뉴스", "url": "https://www.yna.co.kr/rss/society.xml", "trust": 0.85, "domain": "www.yna.co.kr", "quota": 10},
+    {"name": "BBC 코리아", "url": "https://feeds.bbci.co.uk/korean/rss.xml", "trust": 0.95, "domain": "www.bbc.com", "quota": 8},
 ]
 HOME_LINK = "https://www.yna.co.kr"  # 머리말 메시지 링크
 
-# 군인에게 특히 중요한 키워드 (코드가 가산점을 준다)
+# 군인에게 특히 중요한 키워드 (코드가 작은 가산점을 준다)
+# 한 글자 단어('군','핵')는 '군산','핵심' 같은 오탐이 많아 정규식으로 정확히 잡는다.
 INTEREST_KEYWORDS = [
-    "북한", "미사일", "핵", "국방", "합참", "안보", "동맹", "한미", "주한미군", "전쟁", "휴전",
-    "우크라이나", "러시아", "중국", "대만", "일본", "나토", "NATO", "유엔", "제재", "외교",
-    "정상회담", "병역", "장병", "군", "방산", "사이버", "테러", "중동", "이란", "이스라엘",
+    "북한", "北", "미사일", r"핵(?!심)", "국방", "합참", "안보",
+    "동맹", "한미", "주한미군", "전쟁", "휴전", "우크라이나", "러시아", "대만", "나토", "NATO",
+    "중국", "일본", "외교", "유엔", "제재", "정상회담", "병역", "장병", "국군", r"(?<![가-힣])군(?=[이은을의과도사]|\s|$)",
+    r"(?<!산)방산", "방위산업", "사이버", "테러", "중동", "이란", "이스라엘",
 ]
+# 제목 꼬리표로 바로 거르는 의견·비보도 기사 (AI 판단 전에 코드가 먼저)
+OPINION_TAGS = r"\[(연합시론|사설|칼럼|기고|시론|기자수첩|특파원 시선|이슈 컷|인터뷰|오늘의 운세|포토|사진|영상|그래픽|부고|인사|게시판|날씨|특징주|동포의 창|이 시각 헤드라인|주요 기사)"
 
 # ── 경로 / 실행 옵션 ────────────────────────────────────
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

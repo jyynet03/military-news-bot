@@ -73,5 +73,46 @@ class T(unittest.TestCase):
         for p in picks:
             self.assertIn(p["url"], page)
 
+    def test_keyword_no_false_positive(self):
+        self.assertEqual(matcher.keyword_bonus({"title": "인천시, 5개 핵심 철도사업 반영", "description": ""}), 0)
+        self.assertEqual(matcher.keyword_bonus({"title": "군산시 관광객 증가", "description": ""}), 0)
+        self.assertEqual(matcher.keyword_bonus({"title": "출입 통제 산방산 오른 등산객", "description": ""}), 0)
+        self.assertGreater(matcher.keyword_bonus({"title": "북한, 핵실험 준비 정황", "description": ""}), 0)
+
+    def test_prefilter_feed_quota_keeps_domestic(self):
+        nk = [dict(art(i, f"북한 미사일 발사 관련 소식 {i}번째 보도"), feed="nk", quota=3) for i in range(20)]
+        eco_titles = ["소비자물가 석 달 연속 상승", "수출 실적 반도체 덕에 늘어", "기준금리 동결 결정 발표"]
+        eco = [dict(art(100 + i, t), feed="eco", quota=3) for i, t in enumerate(eco_titles)]
+        out = matcher.prefilter(nk + eco, [], NOW)
+        self.assertEqual(sum(a["feed"] == "eco" for a in out), 3)   # 키워드 없는 국내 기사도 AI까지 감
+
+    def test_prefilter_drops_opinion_tag(self):
+        self.assertEqual(matcher.prefilter([art(1, "[연합시론] 안보 위기에 대처하는 자세")], [], NOW), [])
+
+    def test_select_guarantees_domestic(self):
+        cats = ["국제정세", "국제정세", "북한·안보", "북한·안보", "경제", "사회"]
+        cands = [art(i, f"기사 제목 번호 {i} 입니다") for i in range(6)]
+        rows = {f"a{i}": ai(i, cat=c, imp=5 if i < 4 else 3, rel=5 if i < 4 else 3) for i, c in enumerate(cats)}
+        picked = matcher.select(matcher.rank(cands, rows, [], NOW), 5)
+        self.assertEqual(sum(a["ai"]["category"] in ("경제", "사회") for a in picked), 2)
+
+    def test_distinct_events_not_merged(self):
+        cands = [art(1, "한미 국방장관 회담 열려"), art(2, "한미 외교장관 회담 열려 서울에서")]
+        rows = {"a1": ai(1, key="한미_국방장관회담"), "a2": ai(2, key="한미_외교장관회담")}
+        self.assertEqual(len(matcher.select(matcher.rank(cands, rows, [], NOW), 5)), 2)
+
+    def test_pool_not_shrunk_by_caps(self):
+        cats = ["국제정세"] * 3 + ["북한·안보"] * 3 + ["국내정치"] * 2 + ["경제"] * 2 + ["사회"] * 2
+        cands = [art(i, f"서로 다른 기사 제목 {i}") for i in range(len(cats))]
+        rows = {f"a{i}": ai(i, cat=c) for i, c in enumerate(cats)}
+        self.assertEqual(len(matcher.select(matcher.rank(cands, rows, [], NOW), 9, matcher.pool_caps())), 9)
+
+    def test_ai_out_of_range_numbers(self):
+        rows = {"a1": ai(1, imp="9", rel=None, cat="이상한분야")}
+        out = matcher.rank([art(1, "기사 제목 번호 1 입니다")], rows, [], NOW)
+        self.assertEqual(out[0]["ai"]["importance"], 5)
+        self.assertEqual(out[0]["ai"]["category"], "기타")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,6 +62,8 @@ def fetch_all() -> list:
                 "published": _published(e),
                 "source": feed["name"],
                 "trust": feed["trust"],
+                "feed": feed["url"],
+                "quota": feed.get("quota", 8),
             })
     print(f"[수집] 기사 {len(items)}건")
     return items
