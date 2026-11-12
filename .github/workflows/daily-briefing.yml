@@ -2,12 +2,13 @@ name: 매일 아침 시사 브리핑
 
 on:
   schedule:
-    # GitHub 예약은 UTC 기준 + 자주 늦게 출발 → 미리 5번 깨우고, 코드가 08:50(KST)에 딱 한 번 보냄
-    - cron: "5 23 * * *"    # 08:05 KST
-    - cron: "15 23 * * *"   # 08:15 KST
-    - cron: "25 23 * * *"   # 08:25 KST
-    - cron: "35 23 * * *"   # 08:35 KST
-    - cron: "45 23 * * *"   # 08:45 KST
+    # GitHub 예약은 UTC 기준이고 몇 시간씩 늦게 깨울 때가 있음(실제로 4시간 40분 지연 발생)
+    # → 새벽부터 미리 5번 깨움. 먼저 깬 실행이 08:25까지 자다가 준비, 08:50(KST)에 딱 한 번 보냄
+    - cron: "30 18 * * *"   # 03:30 KST
+    - cron: "30 19 * * *"   # 04:30 KST
+    - cron: "30 20 * * *"   # 05:30 KST
+    - cron: "30 21 * * *"   # 06:30 KST
+    - cron: "30 22 * * *"   # 07:30 KST
   workflow_dispatch:
     inputs:
       force:
@@ -35,7 +36,7 @@ env:
 jobs:
   briefing:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 355   # GitHub 최대 6시간. 03:30에 깨면 08:50까지 약 5시간 20분
     environment:
       name: github-pages
     steps:

@@ -48,6 +48,15 @@ def prepare():
         return
     _set_output("skip", "false")
 
+    # GitHub 예약은 몇 시간씩 늦게 깨울 때가 있어서 새벽에 미리 깨움 → 08:25까지 여기서 대기
+    prep_at = now.replace(hour=config.PREP_HOUR, minute=config.PREP_MINUTE, second=0, microsecond=0)
+    wait = (prep_at - datetime.now(config.KST)).total_seconds()
+    if wait > 0 and not (config.FORCE or config.DRY_RUN or config.NO_WAIT):
+        print(f"[대기] {now:%H:%M}에 깨어남 → {prep_at:%H:%M}까지 {int(wait // 60)}분 기다렸다가 기사 준비")
+        sys.stdout.flush()
+        time.sleep(wait)
+        now = datetime.now(config.KST)
+
     items = news.fetch_all()
     cands = matcher.prefilter(items, history, now)
     guard = gemini.QuotaGuard(state, today)
