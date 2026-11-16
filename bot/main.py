@@ -139,6 +139,14 @@ def send():
         print(f"[대기] {config.SEND_HOUR:02d}:{config.SEND_MINUTE:02d}까지 {int(wait)}초 기다립니다.")
         time.sleep(wait)
 
+    # 보내기 직전, GitHub에 올라간 최신 기록을 다시 확인 → 다른 실행이 이미 보냈으면 중단 (중복 발송 방지)
+    if not config.FORCE:
+        latest = storage.remote_state()
+        if latest and latest.get("last_sent_date") == today:
+            print(f"[건너뜀] 다른 실행이 오늘 {latest.get('last_sent_at')}에 이미 보냈습니다. (중복 방지)")
+            _set_output("dup_skipped", "true")   # 다음 단계(기록 저장)도 건너뜀
+            return
+
     kakao.send_text(token, p["text"], link, button)
     for w in warnings:   # 재발급권 만료 같은 관리 알림만 따로 (드묾)
         kakao.send_text(token, w, config.HOME_LINK)

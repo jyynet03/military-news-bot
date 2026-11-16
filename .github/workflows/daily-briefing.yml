@@ -41,6 +41,8 @@ jobs:
       name: github-pages
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # 예약 당시의 옛 상태가 아니라 '지금' 최신 기록을 꺼내 씀 (중복 발송 방지)
 
       - uses: actions/setup-python@v5
         with:
@@ -71,7 +73,8 @@ jobs:
         continue-on-error: true   # 페이지가 실패해도 카톡은 1번 기사 링크로 보냄
         uses: actions/deploy-pages@v4
 
-      - name: ③ 08:50까지 기다렸다가 카톡 발송
+      - name: ③ 08:50까지 기다렸다가 카톡 발송 (보내기 직전 '오늘 보냄' 기록 재확인)
+        id: send
         if: steps.prep.outputs.skip != 'true'
         env:
           KAKAO_REST_API_KEY: ${{ secrets.KAKAO_REST_API_KEY }}
@@ -82,7 +85,7 @@ jobs:
         run: python -m bot.main send
 
       - name: ④ 기억 저장 (보낸 기사 기록)
-        if: always() && steps.prep.outputs.skip != 'true' && inputs.dry_run != true
+        if: always() && steps.prep.outputs.skip != 'true' && inputs.dry_run != true && steps.send.outputs.dup_skipped != 'true'
         run: |
           git config user.name "briefing-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
